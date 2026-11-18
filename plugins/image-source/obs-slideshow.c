@@ -249,31 +249,33 @@ static inline bool item_valid(struct slideshow *ss)
 	return ss->files.num && ss->cur_item < ss->files.num;
 }
 
-static void do_transition(void *data, bool to_null)
+static void end_slideshow(struct slideshow *ss, bool hide)
 {
-	struct slideshow *ss = data;
-	bool valid = item_valid(ss);
-
-	if (valid && ss->use_cut) {
-		obs_transition_set(ss->transition, ss->files.array[ss->cur_item].source);
-
-	} else if (valid && !to_null) {
-		obs_transition_start(ss->transition, OBS_TRANSITION_MODE_AUTO, ss->tr_speed,
-				     ss->files.array[ss->cur_item].source);
-
-	} else {
+	if (hide)
 		obs_transition_start(ss->transition, OBS_TRANSITION_MODE_AUTO, ss->tr_speed, NULL);
-		set_media_state(ss, OBS_MEDIA_STATE_ENDED);
-		obs_source_media_ended(ss->source);
+
+	set_media_state(ss, OBS_MEDIA_STATE_ENDED);
+	obs_source_media_ended(ss->source);
+}
+
+static void do_transition(struct slideshow *ss)
+{
+	if (!item_valid(ss)) {
+		end_slideshow(ss, true);
+		return;
 	}
 
-	if (valid && !to_null) {
-		calldata_set_int(&ss->cd, "index", ss->cur_item);
-		calldata_set_string(&ss->cd, "path", ss->files.array[ss->cur_item].path);
+	obs_source_t *slide = ss->files.array[ss->cur_item].source;
+	if (ss->use_cut)
+		obs_transition_set(ss->transition, slide);
+	else
+		obs_transition_start(ss->transition, OBS_TRANSITION_MODE_AUTO, ss->tr_speed, slide);
 
-		signal_handler_t *sh = obs_source_get_signal_handler(ss->source);
-		signal_handler_signal(sh, "slide_changed", &ss->cd);
-	}
+	calldata_set_int(&ss->cd, "index", ss->cur_item);
+	calldata_set_string(&ss->cd, "path", ss->files.array[ss->cur_item].path);
+
+	signal_handler_t *sh = obs_source_get_signal_handler(ss->source);
+	signal_handler_signal(sh, "slide_changed", &ss->cd);
 }
 
 static void ss_update(void *data, obs_data_t *settings)
@@ -477,7 +479,7 @@ static void ss_update(void *data, obs_data_t *settings)
 	if (new_tr)
 		obs_source_add_active_child(ss->source, new_tr);
 	if (ss->files.num) {
-		do_transition(ss, false);
+		do_transition(ss);
 
 		if (ss->manual)
 			set_media_state(ss, OBS_MEDIA_STATE_PAUSED);
@@ -497,7 +499,7 @@ static void ss_play_pause(void *data, bool pause)
 	if (ss->stop) {
 		ss->stop = false;
 		ss->paused = false;
-		do_transition(ss, false);
+		do_transition(ss);
 	} else {
 		ss->paused = pause;
 		ss->manual = pause;
@@ -517,7 +519,7 @@ static void ss_restart(void *data)
 	ss->cur_item = 0;
 	ss->stop = false;
 	ss->paused = false;
-	do_transition(ss, false);
+	do_transition(ss);
 
 	set_media_state(ss, OBS_MEDIA_STATE_PLAYING);
 }
@@ -529,7 +531,7 @@ static void ss_stop(void *data)
 	ss->elapsed = 0.0f;
 	ss->cur_item = 0;
 
-	do_transition(ss, true);
+	end_slideshow(ss, true);
 	ss->stop = true;
 	ss->paused = false;
 
@@ -548,7 +550,7 @@ static void ss_next_slide(void *data)
 	else if (++ss->cur_item >= ss->files.num)
 		ss->cur_item = 0;
 
-	do_transition(ss, false);
+	do_transition(ss);
 }
 
 static void ss_previous_slide(void *data)
@@ -565,7 +567,7 @@ static void ss_previous_slide(void *data)
 	else
 		--ss->cur_item;
 
-	do_transition(ss, false);
+	do_transition(ss);
 }
 
 static void play_pause_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
@@ -724,14 +726,14 @@ static void ss_video_tick(void *data, float seconds)
 	if (ss->restart_on_activate && ss->use_cut) {
 		ss->elapsed = 0.0f;
 		ss->cur_item = ss->randomize ? random_file(ss) : 0;
-		do_transition(ss, false);
+		do_transition(ss);
 		ss->restart_on_activate = false;
 		ss->use_cut = false;
 		ss->stop = false;
 		goto finish;
 	}
 
-	if (ss->pause_on_deactivate || ss->manual || ss->stop || ss->paused)
+	if (ss->pause_on_deactivate || ss->manual || ss->stop || ss->paused || ss->state == OBS_MEDIA_STATE_ENDED)
 		goto finish;
 
 	/* ----------------------------------------------------- */
@@ -741,8 +743,9 @@ static void ss_video_tick(void *data, float seconds)
 
 		if (active_transition_source) {
 			obs_source_release(active_transition_source);
-			do_transition(ss, true);
+			end_slideshow(ss, true);
 		}
+		goto finish;
 	}
 
 	/* ----------------------------------------------------- */
@@ -753,10 +756,7 @@ static void ss_video_tick(void *data, float seconds)
 		ss->elapsed -= ss->slide_time;
 
 		if (!ss->loop && ss->cur_item == ss->files.num - 1) {
-			if (ss->hide)
-				do_transition(ss, true);
-			else
-				do_transition(ss, false);
+			end_slideshow(ss, ss->hide);
 
 			goto finish;
 		}
@@ -946,7 +946,8 @@ static void ss_activate(void *data)
 		set_media_state(ss, OBS_MEDIA_STATE_PLAYING);
 	} else if (ss->behavior == BEHAVIOR_PAUSE_UNPAUSE) {
 		ss->pause_on_deactivate = false;
-		set_media_state(ss, OBS_MEDIA_STATE_PLAYING);
+		if (ss_get_state(ss) != OBS_MEDIA_STATE_ENDED)
+			set_media_state(ss, OBS_MEDIA_STATE_PLAYING);
 	}
 }
 
@@ -956,7 +957,8 @@ static void ss_deactivate(void *data)
 
 	if (ss->behavior == BEHAVIOR_PAUSE_UNPAUSE) {
 		ss->pause_on_deactivate = true;
-		set_media_state(ss, OBS_MEDIA_STATE_PAUSED);
+		if (ss_get_state(ss) != OBS_MEDIA_STATE_ENDED)
+			set_media_state(ss, OBS_MEDIA_STATE_PAUSED);
 	}
 }
 
