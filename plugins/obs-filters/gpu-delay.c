@@ -1,6 +1,5 @@
 #include <obs-module.h>
 #include <util/deque.h>
-#include <util/util_uint64.h>
 
 #define S_DELAY_MS "delay_ms"
 #define T_DELAY_MS obs_module_text("DelayMs")
@@ -18,7 +17,6 @@ struct gpu_delay_filter_data {
 	uint64_t interval_ns;
 	uint32_t cx;
 	uint32_t cy;
-	bool target_valid;
 	bool processed_frame;
 };
 
@@ -47,13 +45,8 @@ static size_t num_frames(struct deque *buf)
 
 static void update_interval(struct gpu_delay_filter_data *f, uint64_t new_interval_ns)
 {
-	if (!f->target_valid) {
-		free_textures(f);
-		return;
-	}
-
 	f->interval_ns = new_interval_ns;
-	size_t num = (size_t)(f->delay_ns / new_interval_ns);
+	size_t num = new_interval_ns ? (size_t)(f->delay_ns / new_interval_ns) : 0;
 
 	if (num > num_frames(&f->frames)) {
 		size_t prev_num = num_frames(&f->frames);
@@ -80,53 +73,6 @@ static void update_interval(struct gpu_delay_filter_data *f, uint64_t new_interv
 
 		obs_leave_graphics();
 	}
-}
-
-static inline void check_interval(struct gpu_delay_filter_data *f)
-{
-	struct obs_video_info ovi = {0};
-	uint64_t interval_ns;
-
-	obs_get_video_info(&ovi);
-
-	interval_ns = util_mul_div64(ovi.fps_den, 1000000000ULL, ovi.fps_num);
-
-	if (interval_ns != f->interval_ns)
-		update_interval(f, interval_ns);
-}
-
-static inline void reset_textures(struct gpu_delay_filter_data *f)
-{
-	f->interval_ns = 0;
-	free_textures(f);
-	check_interval(f);
-}
-
-static inline bool check_size(struct gpu_delay_filter_data *f)
-{
-	obs_source_t *target = obs_filter_get_target(f->context);
-	uint32_t cx;
-	uint32_t cy;
-
-	f->target_valid = !!target;
-	if (!f->target_valid)
-		return true;
-
-	cx = obs_source_get_base_width(target);
-	cy = obs_source_get_base_height(target);
-
-	f->target_valid = !!cx && !!cy;
-	if (!f->target_valid)
-		return true;
-
-	if (cx != f->cx || cy != f->cy) {
-		f->cx = cx;
-		f->cy = cy;
-		reset_textures(f);
-		return true;
-	}
-
-	return false;
 }
 
 static void gpu_delay_filter_update(void *data, obs_data_t *s)
@@ -176,11 +122,23 @@ static void gpu_delay_filter_tick(void *data, float t)
 
 	struct gpu_delay_filter_data *f = data;
 
-	f->processed_frame = false;
+	obs_source_t *target = obs_filter_get_target(f->context);
+	const uint32_t cx = target ? obs_source_get_base_width(target) : 0;
+	const uint32_t cy = target ? obs_source_get_base_height(target) : 0;
 
-	if (check_size(f))
-		return;
-	check_interval(f);
+	f->processed_frame = false;
+	if (cx != f->cx || cy != f->cy) {
+		free_textures(f);
+		f->cx = cx;
+		f->cy = cy;
+		f->interval_ns = 0;
+	}
+
+	if (cx && cy) {
+		const uint64_t interval_ns = obs_get_frame_interval_ns();
+		if (interval_ns != f->interval_ns)
+			update_interval(f, interval_ns);
+	}
 }
 
 static const char *get_tech_name_and_multiplier(enum gs_color_space current_space, enum gs_color_space source_space,
@@ -261,7 +219,7 @@ static void gpu_delay_filter_render(void *data, gs_effect_t *effect)
 	obs_source_t *target = obs_filter_get_target(f->context);
 	obs_source_t *parent = obs_filter_get_parent(f->context);
 
-	if (!f->target_valid || !target || !parent || !f->frames.size) {
+	if (!target || !parent || !f->frames.size) {
 		obs_source_skip_video_filter(f->context);
 		return;
 	}
@@ -328,7 +286,7 @@ static enum gs_color_space gpu_delay_filter_get_color_space(void *data, size_t c
 	obs_source_t *target = obs_filter_get_target(f->context);
 	obs_source_t *parent = obs_filter_get_parent(f->context);
 
-	if (!f->target_valid || !target || !parent || !f->frames.size) {
+	if (!target || !parent || !f->frames.size) {
 		return (count > 0) ? preferred_spaces[0] : GS_CS_SRGB;
 	}
 
