@@ -1,3 +1,5 @@
+#include "slideshow-random.h"
+
 #include <obs-module.h>
 #include <util/threading.h>
 #include <util/platform.h>
@@ -178,18 +180,6 @@ static void free_files(image_file_array_t *files)
 	}
 
 	da_free(*files);
-}
-
-static inline size_t random_file(struct slideshow *ss)
-{
-	size_t next = ss->cur_item;
-
-	if (ss->files.num > 1) {
-		while (next == ss->cur_item)
-			next = (size_t)rand() % ss->files.num;
-	}
-
-	return next;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -474,8 +464,8 @@ static void ss_update(void *data, obs_data_t *settings)
 	obs_transition_set_alignment(ss->transition, OBS_ALIGN_CENTER);
 	obs_transition_set_scale_type(ss->transition, OBS_TRANSITION_SCALE_ASPECT);
 
-	if (ss->randomize && ss->files.num)
-		ss->cur_item = random_file(ss);
+	if (ss->randomize)
+		ss->cur_item = random_slide_index(ss->files.num, ss->files.num);
 	if (new_tr)
 		obs_source_add_active_child(ss->source, new_tr);
 	if (ss->files.num) {
@@ -546,7 +536,7 @@ static void ss_next_slide(void *data)
 		return;
 
 	if (ss->randomize)
-		ss->cur_item = random_file(ss);
+		ss->cur_item = random_slide_index(ss->files.num, ss->cur_item);
 	else if (++ss->cur_item >= ss->files.num)
 		ss->cur_item = 0;
 
@@ -561,7 +551,7 @@ static void ss_previous_slide(void *data)
 		return;
 
 	if (ss->randomize)
-		ss->cur_item = random_file(ss);
+		ss->cur_item = random_slide_index(ss->files.num, ss->cur_item);
 	else if (ss->cur_item == 0)
 		ss->cur_item = ss->files.num - 1;
 	else
@@ -725,7 +715,7 @@ static void ss_video_tick(void *data, float seconds)
 
 	if (ss->restart_on_activate && ss->use_cut) {
 		ss->elapsed = 0.0f;
-		ss->cur_item = ss->randomize ? random_file(ss) : 0;
+		ss->cur_item = ss->randomize ? random_slide_index(ss->files.num, ss->cur_item) : 0;
 		do_transition(ss);
 		ss->restart_on_activate = false;
 		ss->use_cut = false;

@@ -1,3 +1,5 @@
+#include "slideshow-random.h"
+
 #include <obs-module.h>
 #include <util/deque.h>
 #include <util/threading.h>
@@ -187,30 +189,11 @@ static inline void free_slideshow_data(struct slideshow_data *ssd)
 	da_free(ssd->files);
 }
 
-static size_t random_file(struct slideshow_data *ssd, size_t slide_idx)
-{
-	const size_t files = ssd->files.num;
-	size_t next = slide_idx;
-
-	if (ssd->files.num > 1) {
-		while (next == slide_idx) {
-			size_t threshold = (~files + 1) % files;
-			size_t r;
-			do {
-				r = rand();
-			} while (r < threshold);
-			next = r % files;
-		}
-	}
-
-	return next;
-}
-
 /* gets a new file idx based upon a prior index */
 static inline size_t get_new_file(struct slideshow_data *ssd, size_t slide_idx, bool next)
 {
 	if (ssd->randomize) {
-		return random_file(ssd, slide_idx);
+		return random_slide_index(ssd->files.num, slide_idx);
 	} else if (next) {
 		return (++slide_idx >= ssd->files.num) ? 0 : slide_idx;
 	} else {
@@ -377,8 +360,8 @@ static void restart_slides(struct slideshow *ss)
 	struct slideshow_data *ssd = &ss->data;
 	size_t start_idx = 0;
 
-	if (ssd->randomize && ssd->files.num > 0) {
-		start_idx = (size_t)rand() % ssd->files.num;
+	if (ssd->randomize) {
+		start_idx = random_slide_index(ssd->files.num, ssd->files.num);
 	}
 
 	struct active_slides new_slides = {0};
@@ -651,7 +634,7 @@ static void ss_next_slide(void *data)
 
 	size_t slide_idx = last->slide_idx;
 	if (ss->data.randomize)
-		slide_idx = random_file(&ss->data, slide_idx);
+		slide_idx = random_slide_index(ssd->files.num, slide_idx);
 	else if (++slide_idx >= ssd->files.num)
 		slide_idx = 0;
 
@@ -679,7 +662,7 @@ static void ss_previous_slide(void *data)
 
 	size_t slide_idx = first->slide_idx;
 	if (ss->data.randomize)
-		slide_idx = random_file(&ss->data, slide_idx);
+		slide_idx = random_slide_index(ssd->files.num, slide_idx);
 	else if (slide_idx == 0)
 		slide_idx = ss->data.files.num - 1;
 	else
