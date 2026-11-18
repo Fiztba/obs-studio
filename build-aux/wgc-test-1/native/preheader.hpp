@@ -1,0 +1,11 @@
+#define WIN32_LEAN_AND_MEAN
+#include <d3d11.h>
+#include <DispatcherQueue.h>
+#include <dwmapi.h>
+#include <obs-module.h>
+#include <util/windows/ComPtr.hpp>
+#include <Windows.Graphics.Capture.Interop.h>
+#include <windows.graphics.directx.direct3d11.interop.h>
+#include <winrt/Windows.Foundation.Metadata.h>
+#include <winrt/Windows.Graphics.Capture.h>
+#include <winrt/Windows.System.h>

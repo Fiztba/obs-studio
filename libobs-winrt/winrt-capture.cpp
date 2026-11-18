@@ -1,3 +1,4 @@
+/* Modified 2026-11-18 for the Fiztba fork to defer capture copies until drawing. */
 #include "winrt-capture.h"
 
 extern "C" EXPORT BOOL winrt_capture_supported()

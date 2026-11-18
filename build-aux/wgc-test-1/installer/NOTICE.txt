@@ -1,0 +1,24 @@
+OBS Studio 33.0.1 WGC Test 1
+
+This experimental fork is distributed by Fiztba. OBS Studio and the original
+Windows capture module are the work of the OBS Project and its contributors.
+The official OBS Project release is available at
+https://github.com/obsproject/obs-studio/releases/tag/33.0.1
+
+On November 18, 2026, this fork modified libobs-winrt.dll to defer copying a
+pending Windows Graphics Capture frame until OBS draws the source. The
+installer applies this change to a verified local copy of OBS Studio 33.0.1.
+The fork's setup program and modified capture module are distributed under
+the GNU General Public License, version 2 or (at your option) any later
+version. See WGC-Test-1-COPYING.txt. The upstream archive includes its own
+licenses. This software is distributed without warranty.
+
+Release and corresponding source
+https://github.com/Fiztba/obs-studio/releases/tag/33.0.1-wgc-test.1
+
+Modified source
+https://github.com/Fiztba/obs-studio/blob/33.0.1-wgc-test.1/libobs-winrt/winrt-capture.cpp
+
+Launch the test build using "Launch OBS WGC Test" in the installation folder.
+Its scenes, profiles and logs are stored in this portable installation. Back
+up the config folder if you want to retain them when removing the test build.
