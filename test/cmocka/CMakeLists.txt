@@ -8,6 +8,12 @@ target_include_directories(test_serializer PRIVATE ${CMOCKA_INCLUDE_DIR})
 target_link_libraries(test_serializer PRIVATE OBS::libobs ${CMOCKA_LIBRARIES})
 add_test(test_serializer ${CMAKE_CURRENT_BINARY_DIR}/test_serializer)
 
+# Encoder video output timing test
+add_executable(test_encoder_video test_encoder_video.c)
+target_include_directories(test_encoder_video PRIVATE ${CMOCKA_INCLUDE_DIR})
+target_link_libraries(test_encoder_video PRIVATE OBS::libobs ${CMOCKA_LIBRARIES})
+add_test(test_encoder_video ${CMAKE_CURRENT_BINARY_DIR}/test_encoder_video)
+
 # darray test
 add_executable(test_darray test_darray.c)
 target_include_directories(test_darray PRIVATE ${CMOCKA_INCLUDE_DIR})
