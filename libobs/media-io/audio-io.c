@@ -129,15 +129,14 @@ static inline void do_audio_output(struct audio_output *audio, size_t mix_idx, u
 	pthread_mutex_unlock(&audio->input_mutex);
 }
 
-static inline void clamp_audio_output(struct audio_output *audio, size_t bytes)
+static inline void clamp_audio_output(struct audio_output *audio, uint32_t active_mixes, size_t bytes)
 {
 	size_t float_size = bytes / sizeof(float);
 
 	for (size_t mix_idx = 0; mix_idx < MAX_AUDIO_MIXES; mix_idx++) {
 		struct audio_mix *mix = &audio->mixes[mix_idx];
 
-		/* do not process mixing if a specific mix is inactive */
-		if (!mix->inputs.num)
+		if (!(active_mixes & (1u << mix_idx)))
 			continue;
 
 		for (size_t plane = 0; plane < audio->planes; plane++) {
@@ -195,11 +194,13 @@ static void input_and_output(struct audio_output *audio, uint64_t audio_time, ui
 		return;
 
 	/* clamps audio data to -1.0..1.0 */
-	clamp_audio_output(audio, bytes);
+	clamp_audio_output(audio, active_mixes, bytes);
 
-	/* output */
-	for (size_t i = 0; i < MAX_AUDIO_MIXES; i++)
-		do_audio_output(audio, i, new_ts, AUDIO_OUTPUT_FRAMES);
+	/* A newly connected mix starts on the first block rendered for it. */
+	for (size_t i = 0; i < MAX_AUDIO_MIXES; i++) {
+		if (active_mixes & (1u << i))
+			do_audio_output(audio, i, new_ts, AUDIO_OUTPUT_FRAMES);
+	}
 }
 
 static void *audio_thread(void *param)
