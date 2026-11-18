@@ -47,6 +47,9 @@ static void update_interval(struct gpu_delay_filter_data *f, uint64_t new_interv
 {
 	f->interval_ns = new_interval_ns;
 	size_t num = new_interval_ns ? (size_t)(f->delay_ns / new_interval_ns) : 0;
+	/* The queue holds the current frame as well as the delayed frames. */
+	if (num)
+		num++;
 
 	if (num > num_frames(&f->frames)) {
 		size_t prev_num = num_frames(&f->frames);
