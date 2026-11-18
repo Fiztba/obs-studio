@@ -221,6 +221,11 @@ static inline bool valid_video_params(const struct video_output_info *info)
 	return info->height != 0 && info->width != 0 && info->fps_den != 0 && info->fps_num != 0;
 }
 
+static uint64_t calc_frame_time(const struct video_output_info *info)
+{
+	return util_mul_div64(1000000000ULL, info->fps_den, info->fps_num);
+}
+
 static inline void init_cache(struct video_output *video)
 {
 	if (video->info.cache_size > MAX_CACHE_SIZE)
@@ -248,7 +253,7 @@ int video_output_open(video_t **video, struct video_output_info *info)
 		goto fail0;
 
 	memcpy(&out->info, info, sizeof(struct video_output_info));
-	out->frame_time = util_mul_div64(1000000000ULL, info->fps_den, info->fps_num);
+	out->frame_time = calc_frame_time(info);
 
 	if (pthread_mutex_init_recursive(&out->data_mutex) != 0)
 		goto fail0;
@@ -608,8 +613,6 @@ double video_output_get_frame_rate(const video_t *video)
 	if (!video)
 		return 0.0;
 
-	video = get_const_root(video);
-
 	return (double)video->info.fps_num / (double)video->info.fps_den;
 }
 
@@ -668,6 +671,7 @@ video_t *video_output_create_with_frame_rate_divisor(video_t *video, uint32_t di
 	memcpy(new_video, video, sizeof(*new_video));
 	new_video->parent = video;
 	new_video->info.fps_den *= divisor;
+	new_video->frame_time = calc_frame_time(&new_video->info);
 
 	return new_video;
 }
