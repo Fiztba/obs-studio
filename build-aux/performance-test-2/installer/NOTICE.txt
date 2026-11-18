@@ -1,0 +1,22 @@
+Performance Test 2 by Fiztba
+Based on OBS Studio 33.0.1 from the OBS Project.
+
+This independently maintained test build replaces obs.dll, libobs-winrt.dll,
+obs-filters.dll and image-source.dll. Its matching upstream debug symbols
+are omitted. The OBS Project provides the original application and its
+included plugins and libraries. Upstream authors are credited in
+data/obs-studio/authors/AUTHORS.
+
+OBS Studio and the fork changes use the GNU General Public License version 2
+or later. The license is included in Performance-Test-2-COPYING.txt. The
+included libraries and assets retain their respective licenses. Additional
+third-party notices are included in Performance-Test-2-Third-Party-Notices.zip.
+
+Fork source and build instructions:
+https://github.com/Fiztba/obs-studio/tree/33.0.1-wgc-test.2
+Release and sources:
+https://github.com/Fiztba/obs-studio/releases/tag/33.0.1-wgc-test.2
+Upstream source and official release:
+https://github.com/obsproject/obs-studio/releases/tag/33.0.1
+Dependency sources, version pins, patches, and build recipes:
+https://github.com/obsproject/obs-deps/tree/2026-10-23
