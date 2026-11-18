@@ -114,10 +114,33 @@ struct winrt_capture {
 
 	uint32_t texture_width;
 	uint32_t texture_height;
-	D3D11_BOX client_box;
+	D3D11_BOX pending_box;
+	winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame pending_frame{nullptr};
+	winrt::com_ptr<ID3D11Texture2D> pending_surface;
 
 	BOOL active;
 	struct winrt_capture *next;
+
+	void clear_pending_frame()
+	{
+		pending_surface = nullptr;
+		pending_frame = nullptr;
+	}
+
+	void copy_pending_frame()
+	{
+		if (!pending_frame)
+			return;
+
+		auto *destination = static_cast<ID3D11Texture2D *>(gs_texture_get_obj(texture));
+		if (client_area) {
+			context->CopySubresourceRegion(destination, 0, 0, 0, 0, pending_surface.get(), 0, &pending_box);
+		} else {
+			context->CopyResource(destination, pending_surface.get());
+		}
+		texture_written = true;
+		clear_pending_frame();
+	}
 
 	void on_closed(winrt::Windows::Graphics::Capture::GraphicsCaptureItem const &,
 		       winrt::Windows::Foundation::IInspectable const &)
@@ -128,7 +151,9 @@ struct winrt_capture {
 	void on_frame_arrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const &sender,
 			      winrt::Windows::Foundation::IInspectable const &)
 	{
-		const winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame frame = sender.TryGetNextFrame();
+		auto frame = sender.TryGetNextFrame();
+		if (!frame)
+			return;
 		const winrt::Windows::Graphics::SizeInt32 frame_content_size = frame.ContentSize();
 
 		winrt::com_ptr<ID3D11Texture2D> frame_surface =
@@ -141,6 +166,7 @@ struct winrt_capture {
 		obs_enter_graphics();
 
 		if (desc.Format == get_pixel_format(window, monitor, force_sdr)) {
+			D3D11_BOX client_box{};
 			if (!client_area || get_client_box(window, desc.Width, desc.Height, &client_box)) {
 				if (client_area) {
 					texture_width = client_box.right - client_box.left;
@@ -150,11 +176,15 @@ struct winrt_capture {
 					texture_height = desc.Height;
 				}
 
+				// A pending frame belongs to this pool and its original crop.
+				// Release it before replacing the destination or retaining a newer frame.
+				clear_pending_frame();
 				if (texture) {
 					if (texture_width != gs_texture_get_width(texture) ||
 					    texture_height != gs_texture_get_height(texture)) {
 						gs_texture_destroy(texture);
 						texture = nullptr;
+						texture_written = false;
 					}
 				}
 
@@ -165,20 +195,18 @@ struct winrt_capture {
 								    NULL, 0);
 				}
 
-				if (client_area) {
-					context->CopySubresourceRegion((ID3D11Texture2D *)gs_texture_get_obj(texture),
-								       0, 0, 0, 0, frame_surface.get(), 0, &client_box);
-				} else {
-					/* if they gave an SRV, we could avoid this copy */
-					context->CopyResource((ID3D11Texture2D *)gs_texture_get_obj(texture),
-							      frame_surface.get());
+				if (texture) {
+					pending_box = client_box;
+					pending_frame = std::move(frame);
+					pending_surface = std::move(frame_surface);
+					if (!texture_written)
+						copy_pending_frame();
 				}
-
-				texture_written = true;
 			}
 
 			if (frame_content_size.Width != last_size.Width ||
 			    frame_content_size.Height != last_size.Height) {
+				copy_pending_frame();
 				format = desc.Format;
 				frame_pool.Recreate(
 					device,
@@ -188,6 +216,7 @@ struct winrt_capture {
 				last_size = frame_content_size;
 			}
 		} else {
+			clear_pending_frame();
 			active = FALSE;
 		}
 
@@ -203,6 +232,7 @@ static void winrt_capture_device_loss_release(void *data)
 	capture->active = FALSE;
 
 	capture->frame_arrived.revoke();
+	capture->clear_pending_frame();
 
 	try {
 		capture->frame_pool.Close();
@@ -459,6 +489,7 @@ extern "C" EXPORT void winrt_capture_free(struct winrt_capture *capture)
 		}
 
 		obs_enter_graphics();
+		capture->clear_pending_frame();
 		gs_unregister_loss_callbacks(capture);
 		gs_texture_destroy(capture->texture);
 		obs_leave_graphics();
@@ -527,6 +558,7 @@ extern "C" EXPORT enum gs_color_space winrt_capture_get_color_space(const struct
 
 extern "C" EXPORT void winrt_capture_render(struct winrt_capture *capture)
 {
+	capture->copy_pending_frame();
 	if (capture->texture_written) {
 		const char *tech_name = "Draw";
 		float multiplier = 1.f;
@@ -600,6 +632,9 @@ extern "C" EXPORT void winrt_capture_thread_stop()
 {
 	struct winrt_capture *capture = capture_list;
 	while (capture) {
+		obs_enter_graphics();
+		capture->copy_pending_frame();
+		obs_leave_graphics();
 		winrt_capture_device_loss_release(capture);
 		capture = capture->next;
 	}
